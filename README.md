@@ -67,3 +67,7 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 ## 注意
 
 携程航班页面可能返回 `whaleguard block`，这表示网站反爬系统拦截了自动化访问。脚本会识别该情况并通过 Bark 推送失败原因；如需长期稳定运行，建议在 Arcadia 环境中提供可用的浏览器登录态，或改用可授权的航班数据接口。
+
+## 致谢
+
+感谢 [liuzhunai/flights_monitor](https://github.com/liuzhunai/flights_monitor) 项目提供的实现思路参考，尤其是通过监听携程 `batchSearch` 接口响应解析航班价格数据的方向。
