@@ -1,0 +1,14 @@
+{
+  "name": "ctrip-flight-monitor",
+  "version": "1.0.0",
+  "description": "Monitor Ctrip flight price and notify with Bark.",
+  "type": "module",
+  "scripts": {
+    "auth": "node src/auth.js",
+    "monitor": "node src/monitor.js",
+    "check": "node --check src/auth.js && node --check src/monitor.js && node --check src/bark.js"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}
