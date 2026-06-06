@@ -82,6 +82,23 @@ async function launchChromium(chromium) {
   }
 }
 
+function parseStorageState(value) {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{')) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(`CTRIP_STORAGE_STATE is not valid JSON: ${error.message}`);
+  }
+}
+
 function normalizeFlightNo(value) {
   return String(value || '').replace(/\s+/g, '').toUpperCase();
 }
@@ -330,9 +347,7 @@ async function run() {
     viewport: { width: 1440, height: 1000 },
   };
 
-  if (process.env.CTRIP_STORAGE_STATE) {
-    contextOptions.storageState = process.env.CTRIP_STORAGE_STATE;
-  }
+  contextOptions.storageState = parseStorageState(process.env.CTRIP_STORAGE_STATE);
 
   const context = await browser.newContext(contextOptions);
   const page = await context.newPage();

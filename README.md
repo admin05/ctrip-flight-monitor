@@ -14,7 +14,7 @@
 - `TARGET_FLIGHT_NO`: 目标航班号，默认 `ZH9494`。
 - `PRICE_STATE_FILE`: 价格状态文件路径，默认 `data/last-price.json`。
 - `BARK_BASE_URL`: Bark 服务地址，默认 `https://api.day.app`。
-- `CTRIP_STORAGE_STATE`: Playwright storage state JSON 路径。如果携程拦截无登录/无 Cookie 访问，可在本机浏览器完成访问后导出登录态，再让脚本加载。
+- `CTRIP_STORAGE_STATE`: Playwright storage state。可以填 JSON 文件路径，也可以直接填完整 JSON 字符串。如果携程拦截无登录/无 Cookie 访问，可在本机浏览器完成访问后导出登录态，再让脚本加载。
 - `CTRIP_API_WAIT_MS`: 等待携程 `batchSearch` 响应的毫秒数，默认 `45000`。
 
 ## 运行
@@ -49,6 +49,8 @@ Arcadia 中填入环境变量：
 ```bash
 CTRIP_STORAGE_STATE=data/ctrip-storage-state.json
 ```
+
+如果 Arcadia 不能读取本机文件，也可以把 `data/ctrip-storage-state.json` 的完整内容作为 `CTRIP_STORAGE_STATE` 环境变量值粘贴进去。注意不要把这个 JSON 提交到 GitHub 或公开日志里。
 
 如果 Arcadia 使用定时任务运行，命令保持为：
 
