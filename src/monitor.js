@@ -281,7 +281,7 @@ function formatBeijingTime(date) {
     hour12: false,
   });
 
-  return `${formatter.format(date).replace(/\//g, '-')} 北京时间`;
+  return formatter.format(date).replace(/\//g, '-');
 }
 
 async function findFlightPrice(page, flightNo) {
