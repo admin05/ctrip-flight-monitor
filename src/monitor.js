@@ -1,10 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sendBarkNotification } from './bark.js';
 
 const SCRIPT_NAME = '携程机票价格监控';
 const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn0-tfu0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0';
 const DEFAULT_STATE_FILE = 'data/last-price.json';
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const config = {
   url: process.env.CTRIP_FLIGHT_URL || DEFAULT_FLIGHT_URL,
@@ -48,9 +51,31 @@ async function loadChromium() {
     return chromium;
   } catch (error) {
     if (error.code === 'ERR_MODULE_NOT_FOUND') {
-      throw new Error(
-        'Missing dependency: playwright. In Arcadia, use "npm run monitor" as the command, or run "npm install" before "node src/monitor.js".'
-      );
+      console.log('[setup] playwright is missing; running npm install...');
+      execFileSync('npm', ['install'], {
+        cwd: REPO_ROOT,
+        stdio: 'inherit',
+      });
+
+      const { chromium } = await import('playwright');
+      return chromium;
+    }
+
+    throw error;
+  }
+}
+
+async function launchChromium(chromium) {
+  try {
+    return await chromium.launch({ headless: true });
+  } catch (error) {
+    if (/Executable doesn't exist|browserType\.launch/i.test(error.message || '')) {
+      console.log('[setup] Playwright Chromium is missing; installing browser runtime...');
+      execFileSync('npx', ['playwright', 'install', 'chromium'], {
+        cwd: REPO_ROOT,
+        stdio: 'inherit',
+      });
+      return chromium.launch({ headless: true });
     }
 
     throw error;
@@ -299,7 +324,7 @@ async function findFlightPrice(page, flightNo) {
 
 async function run() {
   const chromium = await loadChromium();
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchChromium(chromium);
   const contextOptions = {
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
     viewport: { width: 1440, height: 1000 },

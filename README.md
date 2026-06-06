@@ -50,13 +50,13 @@ Arcadia 中填入环境变量：
 CTRIP_STORAGE_STATE=data/ctrip-storage-state.json
 ```
 
-如果 Arcadia 使用定时任务运行，请把命令设置为：
+如果 Arcadia 使用定时任务运行，命令保持为：
 
 ```bash
-npm run monitor
+arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 ```
 
-不要直接把 Arcadia 命令设置为 `node src/monitor.js`。`npm run monitor` 会先执行 `npm install`，并通过 `postinstall` 安装 Playwright Chromium；直接运行 Node 会跳过依赖安装，可能出现 `Cannot find package 'playwright'`。
+脚本支持 Arcadia 直接运行 JS 文件：如果缺少 `playwright`，会自动在仓库根目录执行 `npm install`；如果缺少 Playwright Chromium 运行时，会自动执行 `npx playwright install chromium`。
 
 脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、航班信息、最低价格、数据来源和价格变化摘要。
 
