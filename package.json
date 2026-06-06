@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "auth": "node src/auth.js",
+    "postinstall": "npx playwright install chromium",
+    "premonitor": "npm install",
     "monitor": "node src/monitor.js",
     "check": "node --check src/auth.js && node --check src/monitor.js && node --check src/bark.js"
   },

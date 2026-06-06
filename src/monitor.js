@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { chromium } from 'playwright';
 import { sendBarkNotification } from './bark.js';
 
 const SCRIPT_NAME = '携程机票价格监控';
@@ -41,6 +40,21 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+async function loadChromium() {
+  try {
+    const { chromium } = await import('playwright');
+    return chromium;
+  } catch (error) {
+    if (error.code === 'ERR_MODULE_NOT_FOUND') {
+      throw new Error(
+        'Missing dependency: playwright. In Arcadia, use "npm run monitor" as the command, or run "npm install" before "node src/monitor.js".'
+      );
+    }
+
+    throw error;
+  }
 }
 
 function normalizeFlightNo(value) {
@@ -284,6 +298,7 @@ async function findFlightPrice(page, flightNo) {
 }
 
 async function run() {
+  const chromium = await loadChromium();
   const browser = await chromium.launch({ headless: true });
   const contextOptions = {
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',

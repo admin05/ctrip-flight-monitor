@@ -56,6 +56,8 @@ CTRIP_STORAGE_STATE=data/ctrip-storage-state.json
 npm run monitor
 ```
 
+不要直接把 Arcadia 命令设置为 `node src/monitor.js`。`npm run monitor` 会先执行 `npm install`，并通过 `postinstall` 安装 Playwright Chromium；直接运行 Node 会跳过依赖安装，可能出现 `Cannot find package 'playwright'`。
+
 脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、航班信息、最低价格、数据来源和价格变化摘要。
 
 脚本优先监听携程页面发出的 `batchSearch` 接口响应并解析 `flightItineraryList`，匹配目标航班号后读取经济舱成人最低价；如果没有拦截到接口结果，再回退到页面文本解析。
