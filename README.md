@@ -60,7 +60,7 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 
 脚本支持 Arcadia 直接运行 JS 文件：如果缺少 `playwright`，会自动在仓库根目录执行 `npm install`；如果缺少 Playwright Chromium 运行时，会自动执行 `npx playwright install chromium`。
 
-脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、航班信息、最低价格、数据来源和价格变化摘要。
+脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、航班信息、最低价格和价格变化摘要。
 
 脚本优先监听携程页面发出的 `batchSearch` 接口响应并解析 `flightItineraryList`，匹配目标航班号后读取经济舱成人最低价；如果没有拦截到接口结果，再回退到页面文本解析。
 

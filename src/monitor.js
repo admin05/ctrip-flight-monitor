@@ -269,6 +269,21 @@ function describePriceChange(previous, currentPrice) {
   return `价格上涨 ¥${diff}，上次 ¥${previous.lowestPrice}`;
 }
 
+function formatBeijingTime(date) {
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  return `${formatter.format(date).replace(/\//g, '-')} 北京时间`;
+}
+
 async function findFlightPrice(page, flightNo) {
   const batchSearchCollector = createBatchSearchCollector(page, flightNo);
 
@@ -356,11 +371,14 @@ async function run() {
     const result = await findFlightPrice(page, config.flightNo);
     const previous = await readPreviousState(config.stateFile);
     const changeText = describePriceChange(previous, result.lowestPrice);
-    const checkedAt = new Date().toISOString();
+    const now = new Date();
+    const checkedAt = now.toISOString();
+    const checkedAtBeijing = formatBeijingTime(now);
 
     await writeCurrentState(config.stateFile, {
       ...result,
       checkedAt,
+      checkedAtBeijing,
       route: 'JJN -> TFU',
       depDate: '2026-08-09',
       sourceUrl: config.url,
@@ -370,9 +388,8 @@ async function run() {
       `${SCRIPT_NAME}: 成功`,
       `航班: ${result.flightNo} JJN -> TFU 2026-08-09`,
       `最低价: ¥${result.lowestPrice}`,
-      `来源: ${result.source || 'unknown'}`,
       `变化: ${changeText}`,
-      `检查时间: ${checkedAt}`,
+      `检查时间: ${checkedAtBeijing}`,
     ].join('\n');
 
     console.log(message);
