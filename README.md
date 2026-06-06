@@ -1,6 +1,9 @@
 # 携程机票价格监控
 
-监控泉州晋江国际机场 `JJN` 到成都天府国际机场 `TFU`，`2026-08-09` 深圳航空 `ZH9494` 的最低机票价格，并通过 Bark 推送运行结果。
+监控以下深圳航空航班的最低机票价格，并通过 Bark 推送运行结果：
+
+- `2026-08-01` `ZH9494`，泉州晋江国际机场 `JJN` 到成都天府国际机场 `TFU`
+- `2026-08-09` `ZH9493`，成都天府国际机场 `TFU` 到泉州晋江国际机场 `JJN`
 
 ## Arcadia 环境变量
 
@@ -10,9 +13,12 @@
 
 可选：
 
-- `CTRIP_FLIGHT_URL`: 携程航班列表 URL，默认已配置为本次监控链接。
-- `TARGET_FLIGHT_NO`: 目标航班号，默认 `ZH9494`。
-- `PRICE_STATE_FILE`: 价格状态文件路径，默认 `data/last-price.json`。
+- `CTRIP_TARGETS`: 多航班监控配置，JSON 数组。每项必须包含 `flightNo`、`depDate`、`route`、`url`、`stateFile`。不配置时默认监控 `2026-08-01 ZH9494` 和 `2026-08-09 ZH9493`。
+- `CTRIP_FLIGHT_URL`: 单航班携程航班列表 URL。设置后会使用单航班兼容模式。
+- `TARGET_FLIGHT_NO`: 单航班目标航班号，默认 `ZH9494`。
+- `TARGET_DEP_DATE`: 单航班出发日期，默认 `2026-08-01`。
+- `TARGET_ROUTE`: 单航班航线描述，默认 `JJN -> TFU`。
+- `PRICE_STATE_FILE`: 单航班价格状态文件路径，默认 `data/last-price-ZH9494-2026-08-01.json`。
 - `BARK_BASE_URL`: Bark 服务地址，默认 `https://api.day.app`。
 - `CTRIP_STORAGE_STATE`: Playwright storage state。可以填 JSON 文件路径，也可以直接填完整 JSON 字符串。如果携程拦截无登录/无 Cookie 访问，可在本机浏览器完成访问后导出登录态，再让脚本加载。
 - `CTRIP_API_WAIT_MS`: 等待携程 `batchSearch` 响应的毫秒数，默认 `45000`。
@@ -60,7 +66,7 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 
 脚本支持 Arcadia 直接运行 JS 文件：如果缺少 `playwright`，会自动在仓库根目录执行 `npm install`；如果缺少 Playwright Chromium 运行时，会自动执行 `npx playwright install chromium`。
 
-脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、航班信息、最低价格和价格变化摘要。
+脚本每次运行都会输出结果；如果 `BARK` 存在，会推送脚本名称、运行状态、每个航班的最低价格和价格变化摘要。
 
 脚本优先监听携程页面发出的 `batchSearch` 接口响应并解析 `flightItineraryList`，匹配目标航班号后读取经济舱成人最低价；如果没有拦截到接口结果，再回退到页面文本解析。
 

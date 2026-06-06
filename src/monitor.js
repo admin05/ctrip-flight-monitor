@@ -5,16 +5,81 @@ import { fileURLToPath } from 'node:url';
 import { sendBarkNotification } from './bark.js';
 
 const SCRIPT_NAME = '携程机票价格监控';
-const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn0-tfu0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0';
-const DEFAULT_STATE_FILE = 'data/last-price.json';
+const DEFAULT_TARGETS = [
+  {
+    flightNo: 'ZH9494',
+    depDate: '2026-08-01',
+    route: 'JJN -> TFU',
+    url: 'https://flights.ctrip.com/online/list/oneway-jjn0-tfu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    stateFile: 'data/last-price-ZH9494-2026-08-01.json',
+  },
+  {
+    flightNo: 'ZH9493',
+    depDate: '2026-08-09',
+    route: 'TFU -> JJN',
+    url: 'https://flights.ctrip.com/online/list/oneway-tfu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    stateFile: 'data/last-price-ZH9493-2026-08-09.json',
+  },
+];
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const config = {
-  url: process.env.CTRIP_FLIGHT_URL || DEFAULT_FLIGHT_URL,
-  flightNo: process.env.TARGET_FLIGHT_NO || 'ZH9494',
-  stateFile: process.env.PRICE_STATE_FILE || DEFAULT_STATE_FILE,
+  targets: createTargets(),
   apiWaitMs: Number(process.env.CTRIP_API_WAIT_MS || 45000),
 };
+
+function createTargets() {
+  if (process.env.CTRIP_TARGETS) {
+    return parseTargetsJson(process.env.CTRIP_TARGETS);
+  }
+
+  if (process.env.CTRIP_FLIGHT_URL || process.env.TARGET_FLIGHT_NO || process.env.PRICE_STATE_FILE) {
+    return [
+      {
+        flightNo: process.env.TARGET_FLIGHT_NO || DEFAULT_TARGETS[0].flightNo,
+        depDate: process.env.TARGET_DEP_DATE || DEFAULT_TARGETS[0].depDate,
+        route: process.env.TARGET_ROUTE || DEFAULT_TARGETS[0].route,
+        url: process.env.CTRIP_FLIGHT_URL || DEFAULT_TARGETS[0].url,
+        stateFile: process.env.PRICE_STATE_FILE || DEFAULT_TARGETS[0].stateFile,
+      },
+    ];
+  }
+
+  return DEFAULT_TARGETS;
+}
+
+function parseTargetsJson(value) {
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error(`CTRIP_TARGETS is not valid JSON: ${error.message}`);
+  }
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('CTRIP_TARGETS must be a non-empty JSON array.');
+  }
+
+  return parsed.map((target, index) => {
+    const flightNo = normalizeFlightNo(target.flightNo);
+    const depDate = String(target.depDate || '').trim();
+    const route = String(target.route || '').trim();
+    const url = String(target.url || '').trim();
+    const stateFile = String(target.stateFile || '').trim();
+
+    if (!flightNo || !depDate || !route || !url || !stateFile) {
+      throw new Error(`CTRIP_TARGETS[${index}] must include flightNo, depDate, route, url, and stateFile.`);
+    }
+
+    return {
+      flightNo,
+      depDate,
+      route,
+      url,
+      stateFile,
+    };
+  });
+}
 
 function extractPrices(text) {
   const prices = new Set();
@@ -284,10 +349,11 @@ function formatBeijingTime(date) {
   return formatter.format(date).replace(/\//g, '-');
 }
 
-async function findFlightPrice(page, flightNo) {
+async function findFlightPrice(page, target) {
+  const { flightNo } = target;
   const batchSearchCollector = createBatchSearchCollector(page, flightNo);
 
-  await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const apiResult = await batchSearchCollector.waitForResult(config.apiWaitMs);
   if (apiResult) {
     return apiResult;
@@ -368,39 +434,67 @@ async function run() {
   const page = await context.newPage();
 
   try {
-    const result = await findFlightPrice(page, config.flightNo);
-    const previous = await readPreviousState(config.stateFile);
-    const changeText = describePriceChange(previous, result.lowestPrice);
     const now = new Date();
     const checkedAt = now.toISOString();
     const checkedAtBeijing = formatBeijingTime(now);
+    const successes = [];
+    const failures = [];
 
-    await writeCurrentState(config.stateFile, {
-      ...result,
-      checkedAt,
-      checkedAtBeijing,
-      route: 'JJN -> TFU',
-      depDate: '2026-08-09',
-      sourceUrl: config.url,
-    });
+    for (const target of config.targets) {
+      try {
+        const result = await findFlightPrice(page, target);
+        const previous = await readPreviousState(target.stateFile);
+        const changeText = describePriceChange(previous, result.lowestPrice);
 
-    const message = [
-      `${SCRIPT_NAME}: 成功`,
-      `航班: ${result.flightNo} JJN -> TFU 2026-08-09`,
-      `最低价: ¥${result.lowestPrice}`,
-      `变化: ${changeText}`,
+        await writeCurrentState(target.stateFile, {
+          ...result,
+          checkedAt,
+          checkedAtBeijing,
+          route: target.route,
+          depDate: target.depDate,
+          sourceUrl: target.url,
+        });
+
+        successes.push({
+          ...target,
+          result,
+          changeText,
+        });
+      } catch (error) {
+        failures.push({
+          ...target,
+          error,
+        });
+      }
+    }
+
+    const summaryLines = [
+      `${SCRIPT_NAME}: ${failures.length === 0 ? '成功' : '部分失败'}`,
       `检查时间: ${checkedAtBeijing}`,
-    ].join('\n');
+      ...successes.map(({ flightNo, route, depDate, result, changeText }) => (
+        `${flightNo} ${route} ${depDate}: ¥${result.lowestPrice}，${changeText}`
+      )),
+      ...failures.map(({ flightNo, route, depDate, error }) => (
+        `${flightNo} ${route} ${depDate}: 失败，${error.message}`
+      )),
+    ];
+
+    const message = summaryLines.join('\n');
 
     console.log(message);
     await sendBarkNotification({
       title: SCRIPT_NAME,
       body: message,
+      level: failures.length === 0 ? 'active' : 'timeSensitive',
     });
+
+    if (failures.length > 0) {
+      process.exitCode = 1;
+    }
   } catch (error) {
     const message = [
       `${SCRIPT_NAME}: 失败`,
-      `航班: ${config.flightNo} JJN -> TFU 2026-08-09`,
+      `目标: ${config.targets.map((target) => `${target.flightNo} ${target.route} ${target.depDate}`).join('; ')}`,
       `错误: ${error.message}`,
     ].join('\n');
 
