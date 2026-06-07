@@ -82,3 +82,5 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 ## 致谢
 
 感谢 [liuzhunai/flights_monitor](https://github.com/liuzhunai/flights_monitor) 项目提供的实现思路参考，尤其是通过监听携程 `batchSearch` 接口响应解析航班价格数据的方向。
+
+感谢 [youyi0218/ctrip-flight-alter](https://github.com/youyi0218/ctrip-flight-alter) 项目提供的关键排查参考：携程城市/机场代码的 URL 构造方式、通过页面内 fetch/XHR 注入捕获 `batchSearch` 请求与响应，以及登录 Cookie 对完整航班列表抓取的重要性。本项目的候选 URL 诊断、请求参数摘要和 `CTRIP_STORAGE_STATE` 登录态提示均受其启发。
