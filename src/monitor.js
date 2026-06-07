@@ -10,14 +10,14 @@ const DEFAULT_TARGETS = [
     flightNo: 'ZH9494',
     depDate: '2026-08-01',
     route: 'JJN -> TFU',
-    url: 'https://flights.ctrip.com/online/list/oneway-jjn0-tfu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-jjn0-ctu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
     stateFile: 'data/last-price-ZH9494-2026-08-01.json',
   },
   {
     flightNo: 'ZH9493',
     depDate: '2026-08-09',
     route: 'TFU -> JJN',
-    url: 'https://flights.ctrip.com/online/list/oneway-tfu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-ctu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
     stateFile: 'data/last-price-ZH9493-2026-08-09.json',
   },
 ];
@@ -413,7 +413,7 @@ function formatBatchSummary(summary) {
 
 function getCtripNoFlightMessage(pageText) {
   if (/抱歉，未找到符合条件的航班|无航班|航班座位已售完/.test(pageText)) {
-    return '携程未找到符合条件的航班，可能无航班或座位已售完。';
+    return '携程未找到符合条件的航班，可能无航班、座位已售完，或查询 URL 未使用携程城市代码。';
   }
 
   return null;

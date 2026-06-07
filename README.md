@@ -70,6 +70,8 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 
 脚本优先监听携程页面发出的 `batchSearch` 接口响应并解析 `flightItineraryList`，匹配目标航班号后读取经济舱成人最低价；如果没有拦截到接口结果，再回退到页面文本解析。
 
+携程列表页 URL 使用城市代码而不是机场代码。比如成都城市代码是 `ctu0`，即使目标航班实际到达或出发机场是成都天府 `TFU`，列表 URL 也应使用 `oneway-jjn0-ctu0` 或 `oneway-ctu0-jjn0`，再由脚本按 `ZH9494` / `ZH9493` 航班号精确过滤。
+
 ## 注意
 
 携程航班页面可能返回 `whaleguard block`，这表示网站反爬系统拦截了自动化访问。脚本会识别该情况并通过 Bark 推送失败原因；如需长期稳定运行，建议在 Arcadia 环境中提供可用的浏览器登录态，或改用可授权的航班数据接口。
