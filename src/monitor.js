@@ -497,6 +497,19 @@ function formatBatchSummary(summary) {
   return `batchSearch responses: ${summary.count}; statuses: ${statuses}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}${requestHints}${messages}`;
 }
 
+function formatCompactBatchSummary(summary) {
+  const statuses = summary.statuses.length > 0 ? summary.statuses.join('/') : 'unknown';
+  const requestHints = summary.requestHints.length > 0 ? summary.requestHints.join(',') : 'no-request-body';
+  const sampledFlightNos = summary.flightNos.length > 0 ? summary.flightNos.slice(0, 5).join(',') : 'none';
+  const messages = summary.messages.length > 0 ? summary.messages.join('|') : '';
+  return `status=${statuses} target=${summary.hasTarget ? 'yes' : 'no'} flights=${sampledFlightNos} request=${requestHints}${messages ? ` msg=${messages}` : ''}`;
+}
+
+function getCtripUrlVariant(url) {
+  const match = String(url).match(/oneway-([^/?]+)/i);
+  return match ? match[1] : 'unknown-url';
+}
+
 function getCtripNoFlightMessage(pageText) {
   if (/抱歉，未找到符合条件的航班|无航班|航班座位已售完/.test(pageText)) {
     return '携程未找到符合条件的航班，可能无航班、座位已售完，或查询 URL 未使用携程城市代码。';
@@ -699,7 +712,9 @@ async function findFlightPriceFromUrl(page, target, url) {
   const batchSummary = batchSearchCollector.summary();
   const noFlightMessage = getCtripNoFlightMessage(initialText);
   if (noFlightMessage) {
-    throw new Error(`${noFlightMessage} ${formatBatchSummary(batchSummary)}.`);
+    const error = new Error(`${noFlightMessage} ${formatBatchSummary(batchSummary)}.`);
+    error.compactSummary = formatCompactBatchSummary(batchSummary);
+    throw error;
   }
 
   const flightLocator = page.getByText(flightNo, { exact: false }).first();
@@ -709,7 +724,9 @@ async function findFlightPriceFromUrl(page, target, url) {
 
   if (!flightVisible) {
     const pageSummary = initialText.slice(0, 200);
-    throw new Error(`No visible ${flightNo} result after API wait. ${formatBatchSummary(batchSummary)}. Page: ${pageSummary}`);
+    const error = new Error(`No visible ${flightNo} result after API wait. ${formatBatchSummary(batchSummary)}. Page: ${pageSummary}`);
+    error.compactSummary = formatCompactBatchSummary(batchSummary);
+    throw error;
   }
 
   const candidates = await page.evaluate((targetFlightNo) => {
@@ -747,7 +764,9 @@ async function findFlightPriceFromUrl(page, target, url) {
     const pageText = compactText(await page.locator('body').innerText());
     const index = pageText.indexOf(flightNo);
     const context = index >= 0 ? pageText.slice(Math.max(0, index - 300), index + 800) : pageText.slice(0, 1000);
-    throw new Error(`Found ${flightNo}, but no price was extracted. ${formatBatchSummary(batchSummary)}. Context: ${context}`);
+    const error = new Error(`Found ${flightNo}, but no price was extracted. ${formatBatchSummary(batchSummary)}. Context: ${context}`);
+    error.compactSummary = formatCompactBatchSummary(batchSummary);
+    throw error;
   }
 
   const allPrices = pricedCandidates.flatMap((candidate) => candidate.prices);
@@ -773,13 +792,15 @@ async function findFlightPrice(context, target) {
     try {
       return await findFlightPriceFromUrl(page, target, url);
     } catch (error) {
-      errors.push(`${url}: ${truncateErrorMessage(error.message, 180)}`);
+      const variant = getCtripUrlVariant(url);
+      const summary = error.compactSummary || truncateErrorMessage(error.message, 140);
+      errors.push(`[${variant}] ${summary}`);
     } finally {
       await page.close();
     }
   }
 
-  throw new Error(`All candidate Ctrip URLs failed. ${errors.join(' | ')}`);
+  throw new Error(`All candidate Ctrip URLs failed: ${errors.join(' | ')}`);
 }
 
 async function run() {
