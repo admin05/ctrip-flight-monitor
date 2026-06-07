@@ -34,6 +34,61 @@ const DEFAULT_TARGETS = [
   },
 ];
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const BATCH_SEARCH_KEYWORD = 'batchSearch';
+const INIT_SCRIPT = `
+(() => {
+  const state = { requests: [] };
+  window.__ctripFlightMonitor = state;
+
+  const capture = (meta, status, responseText) => {
+    if (!String(meta.url || '').includes('${BATCH_SEARCH_KEYWORD}')) {
+      return;
+    }
+    state.requests.push({
+      url: meta.url || '',
+      method: meta.method || '',
+      body: meta.body || '',
+      status: status || 0,
+      responseText: responseText || '',
+      ts: Date.now(),
+    });
+  };
+
+  const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    this.__ctripFlightMonitorMeta = { method, url };
+    return originalOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function(body) {
+    const meta = this.__ctripFlightMonitorMeta || {};
+    meta.body = typeof body === 'string' ? body : '';
+    this.addEventListener('loadend', function() {
+      let responseText = '';
+      try {
+        responseText = this.responseText || '';
+      } catch (_) {}
+      capture(meta, this.status, responseText);
+    });
+    return originalSend.apply(this, arguments);
+  };
+
+  const originalFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    const meta = {
+      method: (init && init.method) || (input && input.method) || 'GET',
+      url: typeof input === 'string' ? input : ((input && input.url) || ''),
+      body: (init && typeof init.body === 'string') ? init.body : '',
+    };
+    const response = await originalFetch.apply(this, arguments);
+    try {
+      const responseText = await response.clone().text();
+      capture(meta, response.status, responseText);
+    } catch (_) {}
+    return response;
+  };
+})();
+`;
 
 const config = {
   targets: createTargets(),
@@ -416,6 +471,7 @@ function summarizeBatchSearchResponses(responses, targetFlightNo) {
       .map(normalizeFlightNo)
       .filter(Boolean)
   )))].sort();
+  const requestHints = [...new Set(responses.flatMap(({ body }) => extractRequestHints(body)))].slice(0, 8);
   const statuses = [...new Set(responses.map(({ data }) => String(data?.status ?? 'unknown')))];
   const messages = [...new Set(responses.flatMap(({ data }) => (
     collectStringsByKey(data, (key) => /message|msg|error/i.test(key))
@@ -427,6 +483,7 @@ function summarizeBatchSearchResponses(responses, targetFlightNo) {
     count: responses.length,
     hasTarget: flightNos.includes(target),
     flightNos: flightNos.slice(0, 20),
+    requestHints,
     statuses,
     messages,
   };
@@ -434,9 +491,10 @@ function summarizeBatchSearchResponses(responses, targetFlightNo) {
 
 function formatBatchSummary(summary) {
   const sampledFlightNos = summary.flightNos.length > 0 ? summary.flightNos.join(', ') : 'none';
+  const requestHints = summary.requestHints.length > 0 ? `; request: ${summary.requestHints.join(', ')}` : '';
   const statuses = summary.statuses.length > 0 ? summary.statuses.join(', ') : 'unknown';
   const messages = summary.messages.length > 0 ? `; messages: ${summary.messages.join(' | ')}` : '';
-  return `batchSearch responses: ${summary.count}; statuses: ${statuses}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}${messages}`;
+  return `batchSearch responses: ${summary.count}; statuses: ${statuses}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}${requestHints}${messages}`;
 }
 
 function getCtripNoFlightMessage(pageText) {
@@ -455,19 +513,77 @@ function truncateErrorMessage(message, maxLength = 260) {
   return `${message.slice(0, maxLength - 14)}...(已截断)`;
 }
 
+function extractRequestHints(body) {
+  const text = String(body || '');
+  if (!text) {
+    return [];
+  }
+
+  const hints = [];
+  try {
+    const data = JSON.parse(text);
+    const keys = [
+      'departureCityCode',
+      'arrivalCityCode',
+      'departureAirportCode',
+      'arrivalAirportCode',
+      'dcity',
+      'acity',
+      'departCity',
+      'arriveCity',
+      'departDate',
+      'departureDate',
+      'startDate',
+    ];
+    for (const key of keys) {
+      const values = collectStringsByKey(data, (itemKey) => itemKey === key);
+      for (const value of values) {
+        hints.push(`${key}=${value}`);
+      }
+    }
+  } catch {
+    for (const match of text.matchAll(/"(departureCityCode|arrivalCityCode|departureAirportCode|arrivalAirportCode|dcity|acity|departDate|departureDate|startDate)"\s*:\s*"([^"]+)"/g)) {
+      hints.push(`${match[1]}=${match[2]}`);
+    }
+  }
+
+  return hints;
+}
+
 function createBatchSearchCollector(page, targetFlightNo) {
   const responses = [];
 
+  async function collectInjectedResponses() {
+    const logs = await page.evaluate(() => window.__ctripFlightMonitor?.requests || []).catch(() => []);
+    for (const item of logs) {
+      if (responses.some((response) => response.ts === item.ts && response.url === item.url)) {
+        continue;
+      }
+      try {
+        const data = JSON.parse(item.responseText);
+        responses.push({
+          url: item.url,
+          body: item.body,
+          status: item.status,
+          ts: item.ts,
+          data,
+        });
+      } catch {
+        // Ignore non-JSON responses.
+      }
+    }
+  }
+
   page.on('response', async (response) => {
     const url = response.url();
-    if (!url.includes('batchSearch')) {
+    if (!url.includes(BATCH_SEARCH_KEYWORD)) {
       return;
     }
 
     try {
       const text = await response.text();
       const data = JSON.parse(text);
-      responses.push({ url, data });
+      responses.push({ url, body: '', status: response.status(), ts: Date.now(), data });
     } catch {
       // Ignore non-JSON or inaccessible responses.
     }
@@ -478,6 +594,7 @@ function createBatchSearchCollector(page, targetFlightNo) {
       const deadline = Date.now() + timeoutMs;
       let settleDeadline = null;
       while (Date.now() < deadline) {
+        await collectInjectedResponses();
         for (const response of responses) {
           const result = parseFlightFromBatchSearch(response.data, targetFlightNo);
           if (result) {
@@ -676,6 +793,7 @@ async function run() {
   contextOptions.storageState = parseStorageState(process.env.CTRIP_STORAGE_STATE);
 
   const context = await browser.newContext(contextOptions);
+  await context.addInitScript(INIT_SCRIPT);
   try {
     const now = new Date();
     const checkedAt = now.toISOString();
