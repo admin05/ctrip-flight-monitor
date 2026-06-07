@@ -10,14 +10,14 @@ const DEFAULT_TARGETS = [
     flightNo: 'ZH9494',
     depDate: '2026-08-01',
     route: 'JJN -> TFU',
-    url: 'https://flights.ctrip.com/online/list/oneway-jjn0-ctu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-jjn-ctu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
     stateFile: 'data/last-price-ZH9494-2026-08-01.json',
   },
   {
     flightNo: 'ZH9493',
     depDate: '2026-08-09',
     route: 'TFU -> JJN',
-    url: 'https://flights.ctrip.com/online/list/oneway-ctu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-ctu-jjn?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
     stateFile: 'data/last-price-ZH9493-2026-08-09.json',
   },
 ];
@@ -398,17 +398,27 @@ function summarizeBatchSearchResponses(responses, targetFlightNo) {
       .map(normalizeFlightNo)
       .filter(Boolean)
   )))].sort();
+  const statuses = [...new Set(responses.map(({ data }) => String(data?.status ?? 'unknown')))];
+  const messages = [...new Set(responses.flatMap(({ data }) => (
+    collectStringsByKey(data, (key) => /message|msg|error/i.test(key))
+      .map((item) => compactText(item).slice(0, 80))
+      .filter(Boolean)
+  )))].slice(0, 3);
 
   return {
     count: responses.length,
     hasTarget: flightNos.includes(target),
     flightNos: flightNos.slice(0, 20),
+    statuses,
+    messages,
   };
 }
 
 function formatBatchSummary(summary) {
   const sampledFlightNos = summary.flightNos.length > 0 ? summary.flightNos.join(', ') : 'none';
-  return `batchSearch responses: ${summary.count}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}`;
+  const statuses = summary.statuses.length > 0 ? summary.statuses.join(', ') : 'unknown';
+  const messages = summary.messages.length > 0 ? `; messages: ${summary.messages.join(' | ')}` : '';
+  return `batchSearch responses: ${summary.count}; statuses: ${statuses}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}${messages}`;
 }
 
 function getCtripNoFlightMessage(pageText) {

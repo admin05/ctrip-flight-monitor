@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { chromium } from 'playwright';
 
-const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn0-ctu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0';
+const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn-ctu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0';
 const DEFAULT_STORAGE_STATE = 'data/ctrip-storage-state.json';
 
 const config = {
