@@ -10,14 +10,26 @@ const DEFAULT_TARGETS = [
     flightNo: 'ZH9494',
     depDate: '2026-08-01',
     route: 'JJN -> TFU',
-    url: 'https://flights.ctrip.com/online/list/oneway-jjn-ctu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-jjn-tfu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    urls: [
+      'https://flights.ctrip.com/online/list/oneway-jjn-tfu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-jjn-ctu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-jjn0-tfu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-jjn0-ctu0?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    ],
     stateFile: 'data/last-price-ZH9494-2026-08-01.json',
   },
   {
     flightNo: 'ZH9493',
     depDate: '2026-08-09',
     route: 'TFU -> JJN',
-    url: 'https://flights.ctrip.com/online/list/oneway-ctu-jjn?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    url: 'https://flights.ctrip.com/online/list/oneway-tfu-jjn?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    urls: [
+      'https://flights.ctrip.com/online/list/oneway-tfu-jjn?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-ctu-jjn?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-tfu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+      'https://flights.ctrip.com/online/list/oneway-ctu0-jjn0?depdate=2026-08-09&cabin=y_s_c_f&adult=1&child=0&infant=0',
+    ],
     stateFile: 'data/last-price-ZH9493-2026-08-09.json',
   },
 ];
@@ -26,6 +38,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const config = {
   targets: createTargets(),
   apiWaitMs: Number(process.env.CTRIP_API_WAIT_MS || 45000),
+  apiSettleMs: Number(process.env.CTRIP_API_SETTLE_MS || 8000),
 };
 
 function createTargets() {
@@ -40,6 +53,7 @@ function createTargets() {
         depDate: process.env.TARGET_DEP_DATE || DEFAULT_TARGETS[0].depDate,
         route: process.env.TARGET_ROUTE || DEFAULT_TARGETS[0].route,
         url: process.env.CTRIP_FLIGHT_URL || DEFAULT_TARGETS[0].url,
+        urls: process.env.CTRIP_FLIGHT_URL ? [process.env.CTRIP_FLIGHT_URL] : DEFAULT_TARGETS[0].urls,
         stateFile: process.env.PRICE_STATE_FILE || DEFAULT_TARGETS[0].stateFile,
       },
     ];
@@ -65,17 +79,21 @@ function parseTargetsJson(value) {
     const depDate = String(target.depDate || '').trim();
     const route = String(target.route || '').trim();
     const url = String(target.url || '').trim();
+    const urls = Array.isArray(target.urls)
+      ? target.urls.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
     const stateFile = String(target.stateFile || '').trim();
 
-    if (!flightNo || !depDate || !route || !url || !stateFile) {
-      throw new Error(`CTRIP_TARGETS[${index}] must include flightNo, depDate, route, url, and stateFile.`);
+    if (!flightNo || !depDate || !route || (!url && urls.length === 0) || !stateFile) {
+      throw new Error(`CTRIP_TARGETS[${index}] must include flightNo, depDate, route, url or urls, and stateFile.`);
     }
 
     return {
       flightNo,
       depDate,
       route,
-      url,
+      url: url || urls[0],
+      urls: urls.length > 0 ? urls : [url],
       stateFile,
     };
   });
@@ -458,6 +476,7 @@ function createBatchSearchCollector(page, targetFlightNo) {
   return {
     async waitForResult(timeoutMs) {
       const deadline = Date.now() + timeoutMs;
+      let settleDeadline = null;
       while (Date.now() < deadline) {
         for (const response of responses) {
           const result = parseFlightFromBatchSearch(response.data, targetFlightNo);
@@ -468,6 +487,15 @@ function createBatchSearchCollector(page, targetFlightNo) {
             };
           }
         }
+
+        if (responses.length > 0 && settleDeadline === null) {
+          settleDeadline = Date.now() + config.apiSettleMs;
+        }
+
+        if (settleDeadline !== null && Date.now() >= settleDeadline) {
+          return null;
+        }
+
         await sleep(500);
       }
 
@@ -531,14 +559,17 @@ function formatBeijingTime(date) {
   return formatter.format(date).replace(/\//g, '-');
 }
 
-async function findFlightPrice(page, target) {
+async function findFlightPriceFromUrl(page, target, url) {
   const { flightNo } = target;
   const batchSearchCollector = createBatchSearchCollector(page, flightNo);
 
-  await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const apiResult = await batchSearchCollector.waitForResult(config.apiWaitMs);
   if (apiResult) {
-    return apiResult;
+    return {
+      ...apiResult,
+      sourceUrl: url,
+    };
   }
 
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
@@ -612,7 +643,26 @@ async function findFlightPrice(page, target) {
     observedPrices: [...new Set(allPrices)].sort((a, b) => a - b),
     source: 'page text',
     context: bestCandidate.text.slice(0, 500),
+    sourceUrl: url,
   };
+}
+
+async function findFlightPrice(context, target) {
+  const urls = [...new Set([...(target.urls || []), target.url].filter(Boolean))];
+  const errors = [];
+
+  for (const url of urls) {
+    const page = await context.newPage();
+    try {
+      return await findFlightPriceFromUrl(page, target, url);
+    } catch (error) {
+      errors.push(`${url}: ${truncateErrorMessage(error.message, 180)}`);
+    } finally {
+      await page.close();
+    }
+  }
+
+  throw new Error(`All candidate Ctrip URLs failed. ${errors.join(' | ')}`);
 }
 
 async function run() {
@@ -626,8 +676,6 @@ async function run() {
   contextOptions.storageState = parseStorageState(process.env.CTRIP_STORAGE_STATE);
 
   const context = await browser.newContext(contextOptions);
-  const page = await context.newPage();
-
   try {
     const now = new Date();
     const checkedAt = now.toISOString();
@@ -637,7 +685,7 @@ async function run() {
 
     for (const target of config.targets) {
       try {
-        const result = await findFlightPrice(page, target);
+        const result = await findFlightPrice(context, target);
         const previous = await readPreviousState(target.stateFile);
         const changeText = describePriceChange(previous, result.lowestPrice);
 
@@ -647,7 +695,7 @@ async function run() {
           checkedAtBeijing,
           route: target.route,
           depDate: target.depDate,
-          sourceUrl: target.url,
+          sourceUrl: result.sourceUrl || target.url,
         });
 
         successes.push({

@@ -13,7 +13,7 @@
 
 可选：
 
-- `CTRIP_TARGETS`: 多航班监控配置，JSON 数组。每项必须包含 `flightNo`、`depDate`、`route`、`url`、`stateFile`。不配置时默认监控 `2026-08-01 ZH9494` 和 `2026-08-09 ZH9493`。
+- `CTRIP_TARGETS`: 多航班监控配置，JSON 数组。每项必须包含 `flightNo`、`depDate`、`route`、`stateFile`，以及 `url` 或 `urls`。`urls` 可以配置多个候选携程列表页，脚本会逐个尝试直到找到目标航班。不配置时默认监控 `2026-08-01 ZH9494` 和 `2026-08-09 ZH9493`。
 - `CTRIP_FLIGHT_URL`: 单航班携程航班列表 URL。设置后会使用单航班兼容模式。
 - `TARGET_FLIGHT_NO`: 单航班目标航班号，默认 `ZH9494`。
 - `TARGET_DEP_DATE`: 单航班出发日期，默认 `2026-08-01`。
@@ -22,6 +22,7 @@
 - `BARK_BASE_URL`: Bark 服务地址，默认 `https://api.day.app`。
 - `CTRIP_STORAGE_STATE`: Playwright storage state。可以填 JSON 文件路径，也可以直接填完整 JSON 字符串。如果携程拦截无登录/无 Cookie 访问，可在本机浏览器完成访问后导出登录态，再让脚本加载。
 - `CTRIP_API_WAIT_MS`: 等待携程 `batchSearch` 响应的毫秒数，默认 `45000`。
+- `CTRIP_API_SETTLE_MS`: 捕获到 `batchSearch` 响应但未找到目标航班后继续等待的毫秒数，默认 `8000`。用于多个候选 URL 快速切换。
 
 ## 运行
 
@@ -70,7 +71,7 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 
 脚本优先监听携程页面发出的 `batchSearch` 接口响应并解析 `flightItineraryList`，匹配目标航班号后读取经济舱成人最低价；如果没有拦截到接口结果，再回退到页面文本解析。
 
-携程列表页 URL 使用城市代码而不是机场代码。比如成都城市代码是 `ctu`，即使目标航班实际到达或出发机场是成都天府 `TFU`，列表 URL 也应使用 `oneway-jjn-ctu` 或 `oneway-ctu-jjn`，再由脚本按 `ZH9494` / `ZH9493` 航班号精确过滤。
+携程列表页 URL 对城市代码、机场代码和旧版尾缀格式比较敏感。默认配置会对成都天府航班尝试 `tfu`、`ctu` 和旧版 `tfu0` / `ctu0` 候选 URL，再由脚本按 `ZH9494` / `ZH9493` 航班号精确过滤。
 
 ## 注意
 
