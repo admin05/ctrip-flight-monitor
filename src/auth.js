@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { chromium } from 'playwright';
 
-const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn-ctu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0';
+const DEFAULT_FLIGHT_URL = 'https://flights.ctrip.com/online/list/oneway-jjn-tfu?depdate=2026-08-01&cabin=y_s_c_f&adult=1&child=0&infant=0';
 const DEFAULT_STORAGE_STATE = 'data/ctrip-storage-state.json';
 
 const config = {
@@ -26,7 +26,7 @@ async function run() {
   const page = await context.newPage();
 
   console.log(`Opening Ctrip page: ${config.url}`);
-  console.log('In the browser window, finish any manual verification and make sure the flight list loads.');
+  console.log('In the browser window, finish login or manual verification and make sure the target flight list loads.');
   console.log('When the page is usable, return here and press Enter to save storage state.');
 
   await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: 60000 });

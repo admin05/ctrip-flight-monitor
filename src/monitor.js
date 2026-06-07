@@ -510,12 +510,31 @@ function getCtripUrlVariant(url) {
   return match ? match[1] : 'unknown-url';
 }
 
+function isLikelyCorrectEmptyCtripResult(summary) {
+  if (summary.hasTarget || summary.count === 0) {
+    return false;
+  }
+
+  const requestText = summary.requestHints.join(',');
+  return /departureCityCode=|arrivalCityCode=|departureAirportCode=|arrivalAirportCode=/.test(requestText)
+    && summary.statuses.includes('0')
+    && summary.messages.includes('success');
+}
+
 function getCtripNoFlightMessage(pageText) {
   if (/抱歉，未找到符合条件的航班|无航班|航班座位已售完/.test(pageText)) {
     return '携程未找到符合条件的航班，可能无航班、座位已售完，或查询 URL 未使用携程城市代码。';
   }
 
   return null;
+}
+
+function getNoFlightReason(summary) {
+  if (isLikelyCorrectEmptyCtripResult(summary)) {
+    return '携程接口请求参数已包含正确城市/机场/日期，但返回空航班列表；通常是无有效携程登录态/Cookie，需导出并配置 CTRIP_STORAGE_STATE。';
+  }
+
+  return '携程未找到符合条件的航班，可能无航班、座位已售完，或查询 URL 未使用携程城市代码。';
 }
 
 function truncateErrorMessage(message, maxLength = 260) {
@@ -712,7 +731,7 @@ async function findFlightPriceFromUrl(page, target, url) {
   const batchSummary = batchSearchCollector.summary();
   const noFlightMessage = getCtripNoFlightMessage(initialText);
   if (noFlightMessage) {
-    const error = new Error(`${noFlightMessage} ${formatBatchSummary(batchSummary)}.`);
+    const error = new Error(`${getNoFlightReason(batchSummary)} ${formatBatchSummary(batchSummary)}.`);
     error.compactSummary = formatCompactBatchSummary(batchSummary);
     throw error;
   }
@@ -800,7 +819,7 @@ async function findFlightPrice(context, target) {
     }
   }
 
-  throw new Error(`All candidate Ctrip URLs failed: ${errors.join(' | ')}`);
+  throw new Error(`All candidate Ctrip URLs failed: ${errors.slice(0, 2).join(' | ')}${errors.length > 2 ? ` | ... ${errors.length - 2} more` : ''}`);
 }
 
 async function run() {

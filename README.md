@@ -39,7 +39,7 @@ npm run monitor
 npm run auth
 ```
 
-它会打开一个有界面的浏览器。你在浏览器里手动完成访问、验证或登录，确认航班列表可以正常显示后，回到终端按回车。脚本会保存：
+它会打开一个有界面的浏览器。你在浏览器里手动完成访问、验证或登录，确认目标航班列表可以正常显示后，回到终端按回车。脚本会保存：
 
 ```bash
 data/ctrip-storage-state.json
@@ -76,6 +76,8 @@ arcadia run repo/admin05_ctrip-flight-monitor/src/monitor.js
 ## 注意
 
 携程航班页面可能返回 `whaleguard block`，这表示网站反爬系统拦截了自动化访问。脚本会识别该情况并通过 Bark 推送失败原因；如需长期稳定运行，建议在 Arcadia 环境中提供可用的浏览器登录态，或改用可授权的航班数据接口。
+
+如果日志显示 `status=0`、`msg=success`，并且 `request=` 中已经包含正确的城市、机场和日期，但 `flights=none`，通常表示携程 PC 航班接口在当前无登录态/Cookie 下返回空列表。请先运行 `npm run auth` 导出可用的 `CTRIP_STORAGE_STATE`，再配置到 Arcadia。
 
 ## 致谢
 
