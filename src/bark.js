@@ -1,4 +1,13 @@
 const DEFAULT_BARK_BASE_URL = 'https://api.day.app';
+const MAX_BARK_BODY_LENGTH = 900;
+
+function truncateText(text, maxLength) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength - 20)}\n...(内容已截断)`;
+}
 
 export async function sendBarkNotification({
   title,
@@ -14,7 +23,8 @@ export async function sendBarkNotification({
   }
 
   const baseUrl = (process.env.BARK_BASE_URL || DEFAULT_BARK_BASE_URL).replace(/\/+$/, '');
-  const url = new URL(`${baseUrl}/${encodeURIComponent(barkKey)}/${encodeURIComponent(title)}/${encodeURIComponent(body)}`);
+  const safeBody = truncateText(body, MAX_BARK_BODY_LENGTH);
+  const url = new URL(`${baseUrl}/${encodeURIComponent(barkKey)}/${encodeURIComponent(title)}/${encodeURIComponent(safeBody)}`);
   url.searchParams.set('group', group);
   url.searchParams.set('level', level);
 

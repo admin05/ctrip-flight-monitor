@@ -411,6 +411,22 @@ function formatBatchSummary(summary) {
   return `batchSearch responses: ${summary.count}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}`;
 }
 
+function getCtripNoFlightMessage(pageText) {
+  if (/抱歉，未找到符合条件的航班|无航班|航班座位已售完/.test(pageText)) {
+    return '携程未找到符合条件的航班，可能无航班或座位已售完。';
+  }
+
+  return null;
+}
+
+function truncateErrorMessage(message, maxLength = 260) {
+  if (message.length <= maxLength) {
+    return message;
+  }
+
+  return `${message.slice(0, maxLength - 14)}...(已截断)`;
+}
+
 function createBatchSearchCollector(page, targetFlightNo) {
   const responses = [];
 
@@ -523,13 +539,18 @@ async function findFlightPrice(page, target) {
   }
 
   const batchSummary = batchSearchCollector.summary();
+  const noFlightMessage = getCtripNoFlightMessage(initialText);
+  if (noFlightMessage) {
+    throw new Error(`${noFlightMessage} ${formatBatchSummary(batchSummary)}.`);
+  }
+
   const flightLocator = page.getByText(flightNo, { exact: false }).first();
   const flightVisible = await flightLocator.waitFor({ timeout: 10000 })
     .then(() => true)
     .catch(() => false);
 
   if (!flightVisible) {
-    const pageSummary = initialText.slice(0, 1000);
+    const pageSummary = initialText.slice(0, 200);
     throw new Error(`No visible ${flightNo} result after API wait. ${formatBatchSummary(batchSummary)}. Page: ${pageSummary}`);
   }
 
@@ -639,7 +660,7 @@ async function run() {
         `${flightNo} ${route} ${depDate}: ¥${result.lowestPrice}，${changeText}`
       )),
       ...failures.map(({ flightNo, route, depDate, error }) => (
-        `${flightNo} ${route} ${depDate}: 失败，${error.message}`
+        `${flightNo} ${route} ${depDate}: 失败，${truncateErrorMessage(error.message)}`
       )),
     ];
 
