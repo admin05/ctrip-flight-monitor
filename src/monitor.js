@@ -193,6 +193,86 @@ function collectNumbersByKey(value, keyMatcher, result = []) {
   return result;
 }
 
+function collectStringsByKey(value, keyMatcher, result = []) {
+  if (!value || typeof value !== 'object') {
+    return result;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringsByKey(item, keyMatcher, result);
+    }
+    return result;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (keyMatcher(key) && typeof nestedValue === 'string' && nestedValue.trim()) {
+      result.push(nestedValue);
+    }
+
+    if (nestedValue && typeof nestedValue === 'object') {
+      collectStringsByKey(nestedValue, keyMatcher, result);
+    }
+  }
+
+  return result;
+}
+
+function getFlightNosFromObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return [];
+  }
+
+  const keys = [
+    'flightNo',
+    'flightNumber',
+    'marketFlightNo',
+    'operateFlightNo',
+    'shareFlightNo',
+  ];
+
+  return keys
+    .flatMap((key) => {
+      const item = value[key];
+      return Array.isArray(item) ? item : [item];
+    })
+    .filter((item) => typeof item === 'string')
+    .map(normalizeFlightNo)
+    .filter(Boolean);
+}
+
+function getPricesFromScope(scope) {
+  return scope
+    .flatMap((item) => collectNumbersByKey(item, (key) => (
+      /adultPrice|salePrice|barePrice|ticketPrice|displayPrice|price$/i.test(key)
+    )))
+    .filter((price) => Number.isFinite(price) && price >= 100 && price <= 20000)
+    .map((price) => Math.trunc(price))
+    .sort((a, b) => a - b);
+}
+
+function getNearestPrices(value, ancestors) {
+  for (const item of [value, ...[...ancestors].reverse()]) {
+    const prices = [...new Set(getPricesFromScope([item]))];
+    if (prices.length > 0) {
+      return prices;
+    }
+  }
+
+  return [];
+}
+
+function findStringByKey(scope, keyMatcher) {
+  for (let index = scope.length - 1; index >= 0; index -= 1) {
+    const matches = collectStringsByKey(scope[index], keyMatcher);
+    if (matches.length > 0) {
+      return matches[0];
+    }
+  }
+
+  return '';
+}
+
 function getFlightListFromItinerary(item) {
   const segments = item?.flightSegments || item?.flightSegmentList || [];
   return segments.flatMap((segment) => segment?.flightList || segment?.flights || []);
@@ -217,6 +297,58 @@ function getLowestPriceFromItinerary(item) {
   return prices
     .filter((price) => Number.isFinite(price) && price >= 100 && price <= 20000)
     .sort((a, b) => a - b)[0];
+}
+
+function parseFlightFromGenericJson(data, targetFlightNo) {
+  const target = normalizeFlightNo(targetFlightNo);
+  const matches = [];
+
+  function visit(value, ancestors = []) {
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, ancestors);
+      }
+      return;
+    }
+
+    const flightNos = getFlightNosFromObject(value);
+    if (flightNos.includes(target)) {
+      const scope = [...ancestors.slice(-5), value];
+      const observedPrices = getNearestPrices(value, ancestors.slice(-5));
+      const lowestPrice = observedPrices[0];
+
+      if (lowestPrice) {
+        matches.push({
+          flightNo: targetFlightNo,
+          lowestPrice,
+          observedPrices,
+          airline: findStringByKey(scope, /marketAirlineName|airlineName/i),
+          depTime: findStringByKey(scope, /departureDateTime|depTime|takeOffTime/i),
+          arrTime: findStringByKey(scope, /arrivalDateTime|arrTime|arrivalTime/i),
+          depAirport: findStringByKey(scope, /departureAirportShortName|departureAirportName|depAirport/i),
+          arrAirport: findStringByKey(scope, /arrivalAirportShortName|arrivalAirportName|arrAirport/i),
+          source: 'ctrip batchSearch generic',
+          context: JSON.stringify({
+            flightNos,
+            current: value,
+          }).slice(0, 800),
+        });
+      }
+    }
+
+    const nextAncestors = [...ancestors, value];
+    for (const nestedValue of Object.values(value)) {
+      visit(nestedValue, nextAncestors);
+    }
+  }
+
+  visit(data);
+
+  return matches.sort((a, b) => a.lowestPrice - b.lowestPrice)[0] || null;
 }
 
 function parseFlightFromBatchSearch(data, targetFlightNo) {
@@ -255,7 +387,28 @@ function parseFlightFromBatchSearch(data, targetFlightNo) {
     });
   }
 
-  return matches.sort((a, b) => a.lowestPrice - b.lowestPrice)[0] || null;
+  return matches.sort((a, b) => a.lowestPrice - b.lowestPrice)[0]
+    || parseFlightFromGenericJson(data, targetFlightNo);
+}
+
+function summarizeBatchSearchResponses(responses, targetFlightNo) {
+  const target = normalizeFlightNo(targetFlightNo);
+  const flightNos = [...new Set(responses.flatMap(({ data }) => (
+    collectStringsByKey(data, (key) => /flight.*(no|number)|fltno/i.test(key))
+      .map(normalizeFlightNo)
+      .filter(Boolean)
+  )))].sort();
+
+  return {
+    count: responses.length,
+    hasTarget: flightNos.includes(target),
+    flightNos: flightNos.slice(0, 20),
+  };
+}
+
+function formatBatchSummary(summary) {
+  const sampledFlightNos = summary.flightNos.length > 0 ? summary.flightNos.join(', ') : 'none';
+  return `batchSearch responses: ${summary.count}; target in API: ${summary.hasTarget ? 'yes' : 'no'}; sampled flightNos: ${sampledFlightNos}`;
 }
 
 function createBatchSearchCollector(page, targetFlightNo) {
@@ -296,6 +449,9 @@ function createBatchSearchCollector(page, targetFlightNo) {
     },
     get count() {
       return responses.length;
+    },
+    summary() {
+      return summarizeBatchSearchResponses(responses, targetFlightNo);
     },
   };
 }
@@ -366,8 +522,16 @@ async function findFlightPrice(page, target) {
     throw new Error('Ctrip whaleguard block: 携程反爬系统拦截了自动化访问，页面未返回航班数据。');
   }
 
+  const batchSummary = batchSearchCollector.summary();
   const flightLocator = page.getByText(flightNo, { exact: false }).first();
-  await flightLocator.waitFor({ timeout: 45000 });
+  const flightVisible = await flightLocator.waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!flightVisible) {
+    const pageSummary = initialText.slice(0, 1000);
+    throw new Error(`No visible ${flightNo} result after API wait. ${formatBatchSummary(batchSummary)}. Page: ${pageSummary}`);
+  }
 
   const candidates = await page.evaluate((targetFlightNo) => {
     const normalize = (value) => value.replace(/\s+/g, ' ').trim();
@@ -404,7 +568,7 @@ async function findFlightPrice(page, target) {
     const pageText = compactText(await page.locator('body').innerText());
     const index = pageText.indexOf(flightNo);
     const context = index >= 0 ? pageText.slice(Math.max(0, index - 300), index + 800) : pageText.slice(0, 1000);
-    throw new Error(`Found ${flightNo}, but no price was extracted. batchSearch responses: ${batchSearchCollector.count}. Context: ${context}`);
+    throw new Error(`Found ${flightNo}, but no price was extracted. ${formatBatchSummary(batchSummary)}. Context: ${context}`);
   }
 
   const allPrices = pricedCandidates.flatMap((candidate) => candidate.prices);
